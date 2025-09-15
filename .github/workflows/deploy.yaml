@@ -1,0 +1,56 @@
+name: Deploy Individual Lambdas
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/lambda1/**'
+      - 'src/lambda2/**'
+
+jobs:
+  deploy-lambda1:
+    if: contains(join(github.event.commits.*.modified, ''), 'src/lambda1/')
+    runs-on: ubuntu-latest
+    name: Deploy Lambda1
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Zip Lambda1 Code
+        run: |
+          cd src/lambda1
+          zip -r ../../lambda1.zip index.js
+          cd ../../
+
+      - name: Deploy to AWS Lambda (lambda1)
+        uses: appleboy/lambda-action@master
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: us-west-2
+          function_name: lambda1
+          zip_file: lambda1.zip
+
+  deploy-lambda2:
+    if: contains(join(github.event.commits.*.modified, ''), 'src/lambda2/')
+    runs-on: ubuntu-latest
+    name: Deploy Lambda2
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Zip Lambda2 Code
+        run: |
+          cd src/lambda2
+          zip -r ../../lambda2.zip index.js
+          cd ../../
+
+      - name: Deploy to AWS Lambda (lambda2)
+        uses: appleboy/lambda-action@master
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: us-west-2
+          function_name: lambda2
+          zip_file: lambda2.zip
