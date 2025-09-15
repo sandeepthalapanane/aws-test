@@ -32,6 +32,8 @@ jobs:
       - name: Ensure 'live' alias exists
         id: ensure_alias
         run: |
+          set -e
+
           ALIAS_EXISTS=$(aws lambda list-aliases \
             --function-name lambda1 \
             --query "Aliases[?Name=='live'] | length(@)" \
@@ -44,17 +46,15 @@ jobs:
               --name live \
               --function-version \$LATEST \
               --description "Live alias for lambda1"
-            echo "current=\$LATEST" >> "$GITHUB_OUTPUT"
+            echo "current_version=\$LATEST" >> "$GITHUB_ENV"
           else
             CURRENT_VERSION=$(aws lambda get-alias \
               --function-name lambda1 \
               --name live \
               --query 'FunctionVersion' \
               --output text)
-            echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+            echo "current_version=$CURRENT_VERSION" >> "$GITHUB_ENV"
           fi
-
-
 
       - name: Get Current Alias Version
         id: current
