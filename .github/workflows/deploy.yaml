@@ -4,25 +4,35 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'src/lambda1/**'
-      - 'src/lambda2/**'
 
 jobs:
-  deploy-lambda1:
-    if: contains(join(github.event.commits.*.modified, ''), 'src/lambda1/')
+  filter:
     runs-on: ubuntu-latest
-    name: Deploy Lambda1
+    outputs:
+      lambda1: ${{ steps.filter.outputs.lambda1 }}
+      lambda2: ${{ steps.filter.outputs.lambda2 }}
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            lambda1:
+              - 'src/lambda1/**'
+            lambda2:
+              - 'src/lambda2/**'
 
+  deploy-lambda1:
+    needs: filter
+    if: needs.filter.outputs.lambda1 == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
       - name: Zip Lambda1 Code
         run: |
           cd src/lambda1
           zip -r ../../lambda1.zip index.js
           cd ../../
-
       - name: Deploy to AWS Lambda (lambda1)
         uses: appleboy/lambda-action@master
         with:
@@ -33,19 +43,16 @@ jobs:
           zip_file: lambda1.zip
 
   deploy-lambda2:
-    if: contains(join(github.event.commits.*.modified, ''), 'src/lambda2/')
+    needs: filter
+    if: needs.filter.outputs.lambda2 == 'true'
     runs-on: ubuntu-latest
-    name: Deploy Lambda2
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
       - name: Zip Lambda2 Code
         run: |
           cd src/lambda2
           zip -r ../../lambda2.zip index.js
           cd ../../
-
       - name: Deploy to AWS Lambda (lambda2)
         uses: appleboy/lambda-action@master
         with:
