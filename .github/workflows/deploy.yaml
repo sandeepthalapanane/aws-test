@@ -72,6 +72,12 @@ jobs:
           VERSION=$(jq -r '.Version' output.json)
           echo "new_version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Wait for Lambda version to become Active
+        run: |
+          echo "Waiting for lambda1 version ${{ steps.new.outputs.new_version }} to become active..."
+          aws lambda wait function-updated \
+            --function-name lambda1
+
       - name: Run Test Event on New Version
         id: test
         run: |
