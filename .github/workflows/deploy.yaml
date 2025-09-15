@@ -86,10 +86,28 @@ jobs:
             --payload fileb://.github/test-events/test-lambda1.json \
             response.json \
             --cli-binary-format raw-in-base64-out \
-            --output json
+            --output json || {
+              echo "❌ Lambda invocation failed (crashed or threw error)"
+              exit 1
+            }
 
-          STATUS_CODE=$(jq -r '.statusCode' response.json)
+          echo "Lambda raw response:"
+          cat response.json
+
+          STATUS_CODE=$(jq -r '.statusCode // empty' response.json)
+
+          if [[ -z "$STATUS_CODE" ]]; then
+            echo "❌ No statusCode in Lambda response (likely crash or unhandled error)"
+            exit 1
+          fi
+
           echo "Test returned statusCode: $STATUS_CODE"
+
+          if [[ "$STATUS_CODE" -ne 400 ]]; then
+            echo "❌ statusCode did not match expected (400)"
+            exit 1
+          fi
+
 
       - name: Rollback if test failed
         if: failure()
