@@ -1,4 +1,4 @@
-name: Deploy Individual Lambdas
+name: Deploy Individual Lambda's
 
 on:
   push:
