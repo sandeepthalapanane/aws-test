@@ -56,16 +56,6 @@ jobs:
             echo "current_version=$CURRENT_VERSION" >> "$GITHUB_ENV"
           fi
 
-      - name: Get Current Alias Version
-        id: current
-        run: |
-          CURRENT_VERSION=$(aws lambda get-alias \
-            --function-name lambda1 \
-            --name live \
-            --query 'FunctionVersion' \
-            --output text)
-          echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Upload New Version (Publish)
         run: |
           aws lambda update-function-code \
@@ -101,14 +91,16 @@ jobs:
           STATUS_CODE=$(jq -r '.statusCode' response.json)
           echo "Test returned statusCode: $STATUS_CODE"
 
-          if [ "$STATUS_CODE" -ne 400 ]; then
-            echo "❌ Test failed. Rolling back live alias to version ${{ steps.current.outputs.current }}"
-            aws lambda update-alias \
-              --function-name lambda1 \
-              --name live \
-              --function-version ${{ steps.current.outputs.current }}
-            exit 1
-          fi
+      - name: Rollback if test failed
+        if: failure()
+        env:
+          CURRENT_VERSION: ${{ env.current_version }}
+        run: |
+          echo "Rolling back live alias to version $CURRENT_VERSION"
+          aws lambda update-alias \
+            --function-name lambda1 \
+            --name live \
+            --function-version $CURRENT_VERSION
 
       - name: Promote New Version to Live
         if: ${{ success() }}
