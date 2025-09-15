@@ -29,6 +29,25 @@ jobs:
           zip -r ../../lambda1.zip index.js
           cd ../../
 
+      - name: Ensure 'live' alias exists
+        run: |
+          ALIAS_EXISTS=$(aws lambda list-aliases \
+            --function-name lambda1 \
+            --query "Aliases[?Name=='live'] | length(@)" \
+            --output text)
+
+          if [ "$ALIAS_EXISTS" -eq 0 ]; then
+            echo "Creating 'live' alias pointing to version \$LATEST"
+            aws lambda create-alias \
+              --function-name lambda1 \
+              --name live \
+              --function-version \$LATEST \
+              --description "Live alias for lambda1"
+          else
+            echo "'live' alias already exists"
+          fi
+
+
       - name: Get Current Alias Version
         id: current
         run: |
@@ -87,80 +106,98 @@ jobs:
             --function-version ${{ steps.new.outputs.new_version }}
 
 
-  deploy-lambda2:
-    runs-on: ubuntu-latest
-    name: Test and Deploy Lambda2
+  # deploy-lambda2:
+  #   runs-on: ubuntu-latest
+  #   name: Test and Deploy Lambda2
 
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
+  #   steps:
+  #     - name: Checkout Repo
+  #       uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v2
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: us-west-2
 
-      - name: Zip Lambda2 Code
-        run: |
-          cd src/lambda2
-          zip -r ../../lambda2.zip index.js
-          cd ../../
+  #     - name: Zip Lambda2 Code
+  #       run: |
+  #         cd src/lambda2
+  #         zip -r ../../lambda2.zip index.js
+  #         cd ../../
+      
+  #     - name: Ensure 'live' alias exists
+  #       run: |
+  #         ALIAS_EXISTS=$(aws lambda list-aliases \
+  #           --function-name lambda1 \
+  #           --query "Aliases[?Name=='live'] | length(@)" \
+  #           --output text)
 
-      - name: Get Current Alias Version
-        id: current
-        run: |
-          CURRENT_VERSION=$(aws lambda get-alias \
-            --function-name lambda2 \
-            --name live \
-            --query 'FunctionVersion' \
-            --output text)
-          echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+  #         if [ "$ALIAS_EXISTS" -eq 0 ]; then
+  #           echo "Creating 'live' alias pointing to version \$LATEST"
+  #           aws lambda create-alias \
+  #             --function-name lambda1 \
+  #             --name live \
+  #             --function-version \$LATEST \
+  #             --description "Live alias for lambda1"
+  #         else
+  #           echo "'live' alias already exists"
+  #         fi
 
-      - name: Upload New Version (Publish)
-        run: |
-          aws lambda update-function-code \
-            --function-name lambda2 \
-            --zip-file fileb://lambda2.zip \
-            --publish \
-            --output json > output.json
+  #     - name: Get Current Alias Version
+  #       id: current
+  #       run: |
+  #         CURRENT_VERSION=$(aws lambda get-alias \
+  #           --function-name lambda2 \
+  #           --name live \
+  #           --query 'FunctionVersion' \
+  #           --output text)
+  #         echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Extract New Version
-        id: new
-        run: |
-          VERSION=$(jq -r '.Version' output.json)
-          echo "new_version=$VERSION" >> "$GITHUB_OUTPUT"
+  #     - name: Upload New Version (Publish)
+  #       run: |
+  #         aws lambda update-function-code \
+  #           --function-name lambda2 \
+  #           --zip-file fileb://lambda2.zip \
+  #           --publish \
+  #           --output json > output.json
 
-      - name: Run Test Event on New Version
-        id: test
-        run: |
-          echo "Invoking lambda2 version ${{ steps.new.outputs.new_version }} with test event"
-          aws lambda invoke \
-            --function-name lambda2 \
-            --qualifier ${{ steps.new.outputs.new_version }} \
-            --payload fileb://.github/test-events/test-lambda2.json \
-            response.json \
-            --cli-binary-format raw-in-base64-out \
-            --output json
+  #     - name: Extract New Version
+  #       id: new
+  #       run: |
+  #         VERSION=$(jq -r '.Version' output.json)
+  #         echo "new_version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          STATUS_CODE=$(jq -r '.statusCode' response.json)
-          echo "Test returned statusCode: $STATUS_CODE"
+  #     - name: Run Test Event on New Version
+  #       id: test
+  #       run: |
+  #         echo "Invoking lambda2 version ${{ steps.new.outputs.new_version }} with test event"
+  #         aws lambda invoke \
+  #           --function-name lambda2 \
+  #           --qualifier ${{ steps.new.outputs.new_version }} \
+  #           --payload fileb://.github/test-events/test-lambda2.json \
+  #           response.json \
+  #           --cli-binary-format raw-in-base64-out \
+  #           --output json
 
-          if [ "$STATUS_CODE" -ne 400 ]; then
-            echo "❌ Test failed. Rolling back live alias to version ${{ steps.current.outputs.current }}"
-            aws lambda update-alias \
-              --function-name lambda2 \
-              --name live \
-              --function-version ${{ steps.current.outputs.current }}
-            exit 1
-          fi
+  #         STATUS_CODE=$(jq -r '.statusCode' response.json)
+  #         echo "Test returned statusCode: $STATUS_CODE"
 
-      - name: Promote New Version to Live
-        if: ${{ success() }}
-        run: |
-          echo "✅ Test passed. Promoting version ${{ steps.new.outputs.new_version }} to live."
-          aws lambda update-alias \
-            --function-name lambda2 \
-            --name live \
-            --function-version ${{ steps.new.outputs.new_version }}
+  #         if [ "$STATUS_CODE" -ne 400 ]; then
+  #           echo "❌ Test failed. Rolling back live alias to version ${{ steps.current.outputs.current }}"
+  #           aws lambda update-alias \
+  #             --function-name lambda2 \
+  #             --name live \
+  #             --function-version ${{ steps.current.outputs.current }}
+  #           exit 1
+  #         fi
+
+  #     - name: Promote New Version to Live
+  #       if: ${{ success() }}
+  #       run: |
+  #         echo "✅ Test passed. Promoting version ${{ steps.new.outputs.new_version }} to live."
+  #         aws lambda update-alias \
+  #           --function-name lambda2 \
+  #           --name live \
+  #           --function-version ${{ steps.new.outputs.new_version }}
