@@ -4,43 +4,88 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/lambda1/**'
 
 jobs:
-  filter:
-    runs-on: ubuntu-latest
-    outputs:
-      lambda1: ${{ steps.filter.outputs.lambda1 }}
-      lambda2: ${{ steps.filter.outputs.lambda2 }}
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            lambda1:
-              - 'src/lambda1/**'
-            lambda2:
-              - 'src/lambda2/**'
-
   deploy-lambda1:
-    needs: filter
-    if: needs.filter.outputs.lambda1 == 'true'
     runs-on: ubuntu-latest
+    name: Test and Deploy Lambda1
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
       - name: Zip Lambda1 Code
         run: |
           cd src/lambda1
           zip -r ../../lambda1.zip index.js
           cd ../../
-      - name: Deploy to AWS Lambda (lambda1)
-        uses: appleboy/lambda-action@master
-        with:
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: us-west-2
-          function_name: lambda1
-          zip_file: lambda1.zip
+
+      - name: Get Current Alias Version
+        id: current
+        run: |
+          CURRENT_VERSION=$(aws lambda get-alias \
+            --function-name lambda1 \
+            --name live \
+            --query 'FunctionVersion' \
+            --output text)
+          echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload New Version (Publish)
+        run: |
+          aws lambda update-function-code \
+            --function-name lambda1 \
+            --zip-file fileb://lambda1.zip \
+            --publish \
+            --output json > output.json
+
+      - name: Extract New Version
+        id: new
+        run: |
+          VERSION=$(jq -r '.Version' output.json)
+          echo "new_version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Run Test Event on New Version
+        id: test
+        run: |
+          echo "Invoking lambda1 version ${{ steps.new.outputs.new_version }} with test event"
+          aws lambda invoke \
+            --function-name lambda1 \
+            --qualifier ${{ steps.new.outputs.new_version }} \
+            --payload fileb://.github/test-events/test-lambda1.json \
+            response.json \
+            --cli-binary-format raw-in-base64-out \
+            --output json
+
+          STATUS_CODE=$(jq -r '.statusCode' response.json)
+          echo "Test returned statusCode: $STATUS_CODE"
+
+          if [ "$STATUS_CODE" -ne 400 ]; then
+            echo "❌ Test failed. Rolling back live alias to version ${{ steps.current.outputs.current }}"
+            aws lambda update-alias \
+              --function-name lambda1 \
+              --name live \
+              --function-version ${{ steps.current.outputs.current }}
+            exit 1
+          fi
+
+      - name: Promote New Version to Live
+        if: ${{ success() }}
+        run: |
+          echo "✅ Test passed. Promoting version ${{ steps.new.outputs.new_version }} to live."
+          aws lambda update-alias \
+            --function-name lambda1 \
+            --name live \
+            --function-version ${{ steps.new.outputs.new_version }}
+
 
   deploy-lambda2:
     needs: filter
